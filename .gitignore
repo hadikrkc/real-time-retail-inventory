@@ -1,0 +1,129 @@
+# ============================================================
+# .gitignore — Real-Time Retail Inventory Platform
+# ============================================================
+# Strategy: keep code + public docs in git; exclude private,
+# copyrighted, large, and generated content.
+# ============================================================
+
+# ----- Private / team-internal folder -----
+# Anything that should not appear in the public repo lives here.
+_private/
+
+# ----- Submission artifacts (output, not source) -----
+*.docx
+*.pptx
+~$*
+
+# ----- Datasets (large + licensed; downloaded via script) -----
+data/**
+!data/README.md
+!data/.gitkeep
+
+# ----- Python -----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
+.eggs/
+dist/
+build/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ----- Jupyter -----
+.ipynb_checkpoints/
+*.ipynb_meta
+notebooks/**/*-checkpoint.ipynb
+
+# ----- Model artifacts (large binaries) -----
+models/checkpoints/
+models/saved/
+*.pkl
+*.pickle
+*.pth
+*.pt
+*.h5
+*.bin
+*.safetensors
+*.onnx
+*.tflite
+
+# ----- IDE / Editor -----
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+*~
+.project
+.classpath
+.settings/
+nbproject/
+
+# ----- OS noise -----
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# ----- Secrets / credentials -----
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/
+.kaggle/
+credentials.json
+
+# ----- Logs -----
+logs/
+*.log
+*.log.*
+log/
+
+# ----- Docker volumes / overrides -----
+docker-compose.override.yml
+.docker/
+docker-volumes/
+
+# ----- Kafka / Spark state -----
+kafka-logs/
+spark-warehouse/
+metastore_db/
+derby.log
+spark-events/
+
+# ----- Temp / cache -----
+tmp/
+temp/
+.tmp/
+cache/
+.cache/
+
+# ----- AI helper artifacts (defensive) -----
+.claude/
+.aider*
+.cursor/
+
+# ----- Coverage / profiling -----
+.benchmarks/
+prof/
+*.prof

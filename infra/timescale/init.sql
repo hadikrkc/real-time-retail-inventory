@@ -28,9 +28,31 @@ CREATE TABLE IF NOT EXISTS sales_features (
     event_count_7d  BIGINT,
     max_qty_7d      BIGINT,
     min_qty_7d      BIGINT,
+    inserted_at     TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (time, store_id, item_id)
 );
 
 SELECT create_hypertable('sales_features', by_range('time'), if_not_exists => TRUE);
 
 CREATE INDEX IF NOT EXISTS idx_features_store_item ON sales_features (store_id, item_id, time DESC);
+
+-- Anomaly alerts produced by streaming Isolation Forest (Faz 4)
+CREATE TABLE IF NOT EXISTS anomaly_alerts (
+    alert_id             TEXT        NOT NULL,
+    detected_at          TIMESTAMPTZ NOT NULL,
+    feature_time         TIMESTAMPTZ NOT NULL,
+    store_id             TEXT        NOT NULL,
+    item_id              TEXT        NOT NULL,
+    anomaly_score        FLOAT,
+    rolling_avg_7d       FLOAT,
+    rolling_sum_7d       BIGINT,
+    event_count_7d       BIGINT,
+    max_qty_7d           BIGINT,
+    min_qty_7d           BIGINT,
+    detection_latency_ms BIGINT,
+    PRIMARY KEY (alert_id, detected_at)
+);
+
+SELECT create_hypertable('anomaly_alerts', by_range('detected_at'), if_not_exists => TRUE);
+
+CREATE INDEX IF NOT EXISTS idx_alerts_store_item ON anomaly_alerts (store_id, item_id, detected_at DESC);

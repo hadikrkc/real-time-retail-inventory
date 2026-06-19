@@ -1,3 +1,6 @@
 confluent-kafka==2.6.1
 pandas==2.2.3
 lz4==4.3.3
+psycopg2-binary==2.9.10
+scikit-learn==1.6.1
+statsmodels==0.14.4

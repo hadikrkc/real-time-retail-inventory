@@ -104,6 +104,10 @@ docker-compose.override.yml
 .docker/
 docker-volumes/
 
+# ----- Experiment outputs (reproducible artifacts) -----
+evaluation/experiments/*.csv
+evaluation/experiments/*.json
+
 # ----- Kafka / Spark state -----
 kafka-logs/
 spark-warehouse/

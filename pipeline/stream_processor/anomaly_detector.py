@@ -1,15 +1,15 @@
 """
-Faz 4 — Streaming anomaly detector.
+Phase 4 — Streaming anomaly detector.
 
-sales_features tablosunu polling ile izler, Isolation Forest uygular,
-anomalileri retail.anomaly.alerts Kafka topic'ine yazar ve anomaly_alerts
-tablosuna detection latency ile birlikte persist eder (RQ1 metrikleri icin).
+Polls sales_features, applies Isolation Forest, publishes anomalies to the
+retail.anomaly.alerts Kafka topic, and persists results with detection latency
+to the anomaly_alerts table (used for RQ1 metrics).
 
-Lokal calistirma:
+Local usage:
   python pipeline/stream_processor/anomaly_detector.py \
     --db-host localhost --kafka-server localhost:9092
 
-Docker icinde:
+Inside Docker:
   docker exec spark python3 /opt/pipeline/stream_processor/anomaly_detector.py \
     --db-host timescaledb --kafka-server kafka1:19092
 """

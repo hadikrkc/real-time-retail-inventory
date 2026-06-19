@@ -1,10 +1,10 @@
 """
-Faz 3 — Spark Structured Streaming feature pipeline.
+Phase 3 — Spark Structured Streaming feature pipeline.
 
-Kafka'dan retail.sales.events okur, 7 günlük rolling window feature'lar hesaplar
-ve TimescaleDB sales_features tablosuna psycopg2 upsert ile yazar.
+Reads from retail.sales.events, computes 7-day rolling window features,
+and writes to TimescaleDB sales_features via psycopg2 upsert.
 
-Docker içinde çalıştırma (önerilen):
+Run inside Docker (recommended):
   docker exec spark spark-submit \
     --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1 \
     /opt/pipeline/stream_processor/feature_pipeline.py \

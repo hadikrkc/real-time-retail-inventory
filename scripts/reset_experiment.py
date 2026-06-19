@@ -1,19 +1,19 @@
 """
-Deney ortamini sifirlar.
+Resets the experiment environment for a clean run.
 
-Varsayilan (--level=soft):
-  - anomaly_alerts temizle
-  - sales_features temizle
-  - Spark feature checkpoint sil
+Default (--level=soft):
+  - Truncate anomaly_alerts
+  - Truncate sales_features
+  - Delete Spark feature checkpoint
 
---level=hard (+ above):
-  - sales_events temizle
-  - Kafka consumer group offset'lerini sifirla
+--level=hard (includes all of the above, plus):
+  - Truncate sales_events
+  - Reset Kafka consumer group offsets to earliest
 
-Kullanim:
+Usage:
   python scripts/reset_experiment.py              # soft reset
-  python scripts/reset_experiment.py --level hard # hard reset (events dahil)
-  python scripts/reset_experiment.py --dry-run    # ne yapacagini goster, yapma
+  python scripts/reset_experiment.py --level hard # hard reset (includes events)
+  python scripts/reset_experiment.py --dry-run    # show what would be done, no changes
 """
 
 import argparse
@@ -60,8 +60,8 @@ def main():
     dry = args.dry_run
     print(f"\n=== Experiment Reset  [level={args.level}{'  DRY RUN' if dry else ''}] ===\n")
 
-    # ── 1. DB tabloları ───────────────────────────────────────────────────────
-    print("[1] TimescaleDB tablolari temizleniyor...")
+    # ── 1. DB tables ──────────────────────────────────────────────────────────
+    print("[1] Truncating TimescaleDB tables...")
     conn = psycopg2.connect(**DB_PARAMS)
     conn.autocommit = False
     with conn.cursor() as cur:
@@ -72,20 +72,20 @@ def main():
     if not dry:
         conn.commit()
     conn.close()
-    print("  Tamam.\n")
+    print("  Done.\n")
 
     # ── 2. Spark checkpoint ───────────────────────────────────────────────────
-    print("[2] Spark checkpoint siliniyor...")
+    print("[2] Deleting Spark checkpoint...")
     run(
         f'docker exec {SPARK_CONTAINER} rm -rf {CHECKPOINT_DIR}',
         dry,
         f"docker exec {SPARK_CONTAINER} rm -rf {CHECKPOINT_DIR}",
     )
-    print("  Tamam.\n")
+    print("  Done.\n")
 
-    # ── 3. Kafka consumer group offset (hard only) ────────────────────────────
+    # ── 3. Kafka consumer group offsets (hard only) ───────────────────────────
     if args.level == "hard":
-        print("[3] Kafka consumer group offset'leri sifirlanıyor...")
+        print("[3] Resetting Kafka consumer group offsets...")
         for group in CONSUMER_GROUPS:
             run(
                 f'docker exec {KAFKA_CONTAINER} kafka-consumer-groups '
@@ -94,27 +94,26 @@ def main():
                 dry,
                 f"reset offsets: group={group} to earliest",
             )
-        print("  Tamam.\n")
+        print("  Done.\n")
 
-    # ── Sonraki adımlar ───────────────────────────────────────────────────────
-    print("=== Sifirlama tamamlandi ===\n")
-    print("Siradaki adimlar:")
-    print("  1. Spark feature pipeline'i baslatın (varsa once durdurun):")
+    print("=== Reset complete ===\n")
+    print("Next steps:")
+    print("  1. Start Spark feature pipeline (stop it first if already running):")
     print("       docker exec spark spark-submit \\")
     print("         --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1 \\")
     print("         /opt/pipeline/stream_processor/feature_pipeline.py \\")
     print("         --kafka-server kafka1:19092 --db-host timescaledb --starting-offsets latest")
     print()
-    print("  2. Anomaly detector'i baslatın:")
+    print("  2. Start anomaly detector:")
     print("       python pipeline/stream_processor/anomaly_detector.py \\")
     print("         --db-host localhost --kafka-server localhost:9092")
     print()
-    print("  3. Producer ile yeni data gönderın:")
+    print("  3. Send data via producer:")
     print("       python pipeline/replay_producer/producer.py --start-day 1 --end-day 10")
     print()
-    print("  4. Latency'yi kontrol edin:")
+    print("  4. Check detection latency:")
     print("       docker exec timescaledb psql -U retail -d retail -c \\")
-    print('         "SELECT COUNT(*), ROUND(AVG(detection_latency_ms)) AS avg_ms, ')
+    print('         "SELECT COUNT(*), ROUND(AVG(detection_latency_ms)) AS avg_ms,')
     print("          MIN(detection_latency_ms) AS min_ms, MAX(detection_latency_ms) AS max_ms")
     print('          FROM anomaly_alerts;"')
 

@@ -102,6 +102,28 @@ services:
     networks:
       - retail_net
 
+  # ── Spark (Java 17, local mode) ───────────────────────────────────────────
+  spark:
+    build:
+      context: ./spark
+      dockerfile: Dockerfile
+    container_name: spark
+    mem_limit: 4g
+    environment:
+      - PYSPARK_PYTHON=python3
+    ports:
+      - "4040:4040"   # Spark UI (local mode)
+    volumes:
+      - ../pipeline:/opt/pipeline
+    command: ["tail", "-f", "/dev/null"]
+    depends_on:
+      kafka1:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
+    networks:
+      - retail_net
+
 networks:
   retail_net:
     name: retail_net

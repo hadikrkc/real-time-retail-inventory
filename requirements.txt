@@ -4,3 +4,4 @@ lz4==4.3.3
 psycopg2-binary==2.9.10
 scikit-learn==1.6.1
 statsmodels==0.14.4
+pyspark==3.5.1

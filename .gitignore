@@ -104,6 +104,9 @@ docker-compose.override.yml
 .docker/
 docker-volumes/
 
+# ----- Session progress tracker (local only) -----
+TODO.md
+
 # ----- Experiment outputs (reproducible artifacts) -----
 evaluation/experiments/*.csv
 evaluation/experiments/*.json

@@ -56,3 +56,20 @@ CREATE TABLE IF NOT EXISTS anomaly_alerts (
 SELECT create_hypertable('anomaly_alerts', by_range('detected_at'), if_not_exists => TRUE);
 
 CREATE INDEX IF NOT EXISTS idx_alerts_store_item ON anomaly_alerts (store_id, item_id, detected_at DESC);
+
+-- Demand forecasts produced by streaming forecaster (Faz 5)
+CREATE TABLE IF NOT EXISTS forecast_results (
+    forecast_id     TEXT        NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL,
+    store_id        TEXT        NOT NULL,
+    item_id         TEXT        NOT NULL,
+    horizon_day     INTEGER     NOT NULL,
+    forecast_date   TIMESTAMPTZ NOT NULL,
+    predicted_qty   FLOAT       NOT NULL,
+    feature_source  TEXT        NOT NULL,
+    PRIMARY KEY (forecast_id, created_at)
+);
+
+SELECT create_hypertable('forecast_results', by_range('created_at'), if_not_exists => TRUE);
+
+CREATE INDEX IF NOT EXISTS idx_forecast_store_item ON forecast_results (store_id, item_id, created_at DESC);

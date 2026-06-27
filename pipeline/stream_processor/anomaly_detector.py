@@ -38,10 +38,15 @@ BATCH_LIMIT   = 10_000  # max rows per poll
 # ── DB / Kafka helpers ────────────────────────────────────────────────────────
 
 def connect_db(host: str) -> psycopg2.extensions.connection:
-    return psycopg2.connect(
+    conn = psycopg2.connect(
         host=host, port=5432, dbname="retail",
         user="retail", password="retail",
     )
+    # autocommit=True: each SELECT/INSERT is its own transaction.
+    # This ensures idle polls don't hold ACCESS SHARE locks on sales_features,
+    # which would otherwise block TRUNCATE during a reset.
+    conn.autocommit = True
+    return conn
 
 
 def make_producer(kafka_server: str) -> Producer:
@@ -81,7 +86,13 @@ def train_model(conn: psycopg2.extensions.connection) -> IsolationForest:
 
 def get_watermark(conn: psycopg2.extensions.connection) -> datetime:
     with conn.cursor() as cur:
-        cur.execute("SELECT MAX(time) FROM sales_features")
+        # Use inserted_at (wall-clock write time), not time (M5 calendar date).
+        # M5 dates never advance past 2016 on replay, so watermark based on
+        # "time" gets stuck after the first full cycle.
+        cur.execute("""
+            SELECT COALESCE(MAX(inserted_at), NOW() - INTERVAL '24 hours')
+            FROM sales_features
+        """)
         return cur.fetchone()[0]
 
 
@@ -90,8 +101,8 @@ def poll_features(conn: psycopg2.extensions.connection, after: datetime) -> list
         cur.execute(f"""
             SELECT time, store_id, item_id, inserted_at, {', '.join(FEATURE_COLS)}
             FROM sales_features
-            WHERE time > %s
-            ORDER BY time ASC
+            WHERE inserted_at > %s
+            ORDER BY inserted_at ASC
             LIMIT %s
         """, (after, BATCH_LIMIT))
         return cur.fetchall()
@@ -222,7 +233,7 @@ def main():
                 )
                 total_checked += n_checked
                 total_alerts  += n_alerts
-                watermark       = rows[-1]["time"]
+                watermark       = rows[-1]["inserted_at"]
 
                 ts   = datetime.now(timezone.utc).strftime("%H:%M:%S")
                 rate = n_alerts / n_checked * 100 if n_checked else 0

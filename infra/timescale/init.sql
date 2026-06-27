@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 
 CREATE TABLE IF NOT EXISTS sales_events (
-    time        TIMESTAMPTZ     NOT NULL,
+    time        TIMESTAMPTZ     NOT NULL,          -- M5 calendar date (2011-2016)
     item_id     TEXT            NOT NULL,
     dept_id     TEXT            NOT NULL,
     cat_id      TEXT            NOT NULL,
@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS sales_events (
     sales_qty   INTEGER         NOT NULL,
     day         TEXT            NOT NULL,
     event_id    TEXT            NOT NULL,
+    ingested_at TIMESTAMPTZ,                       -- wall-clock time consumed from Kafka (RQ3)
     UNIQUE (event_id)
 );
 
@@ -17,6 +18,7 @@ SELECT create_hypertable('sales_events', by_range('time'), if_not_exists => TRUE
 
 CREATE INDEX IF NOT EXISTS idx_sales_store_item ON sales_events (store_id, item_id, time DESC);
 CREATE INDEX IF NOT EXISTS idx_sales_cat        ON sales_events (cat_id, time DESC);
+CREATE INDEX IF NOT EXISTS idx_sales_ingested   ON sales_events (ingested_at DESC);
 
 -- Rolling window features produced by Spark Structured Streaming
 CREATE TABLE IF NOT EXISTS sales_features (
@@ -35,6 +37,7 @@ CREATE TABLE IF NOT EXISTS sales_features (
 SELECT create_hypertable('sales_features', by_range('time'), if_not_exists => TRUE);
 
 CREATE INDEX IF NOT EXISTS idx_features_store_item ON sales_features (store_id, item_id, time DESC);
+CREATE INDEX IF NOT EXISTS idx_features_inserted   ON sales_features (inserted_at DESC);
 
 -- Anomaly alerts produced by streaming Isolation Forest (Faz 4)
 CREATE TABLE IF NOT EXISTS anomaly_alerts (
@@ -73,3 +76,14 @@ CREATE TABLE IF NOT EXISTS forecast_results (
 SELECT create_hypertable('forecast_results', by_range('created_at'), if_not_exists => TRUE);
 
 CREATE INDEX IF NOT EXISTS idx_forecast_store_item ON forecast_results (store_id, item_id, created_at DESC);
+
+-- Pipeline throughput & latency metrics (RQ3 — P50/P95/P99)
+CREATE TABLE IF NOT EXISTS pipeline_metrics (
+    time                TIMESTAMPTZ      NOT NULL,
+    events_per_sec      DOUBLE PRECISION,
+    processing_lag_ms   DOUBLE PRECISION,
+    kafka_lag           BIGINT,
+    db_row_count        BIGINT
+);
+
+SELECT create_hypertable('pipeline_metrics', by_range('time'), if_not_exists => TRUE);

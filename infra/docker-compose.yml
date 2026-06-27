@@ -124,6 +124,178 @@ services:
     networks:
       - retail_net
 
+  # ── M5 Replay Producer (FastAPI control API) ─────────────────────────────
+  replay-producer:
+    build:
+      context: ../pipeline/replay_producer
+      dockerfile: Dockerfile
+    container_name: replay-producer
+    environment:
+      KAFKA_BROKERS: kafka1:19092
+      M5_DATA_DIR: /data/m5
+      DB_HOST: timescaledb
+      DB_PORT: "5432"
+      DB_NAME: retail
+      DB_USER: retail
+      DB_PASS: retail
+    volumes:
+      - ../data/m5:/data/m5:ro          # M5 CSV'leri read-only
+      - ../pipeline/replay_producer:/app # hot-reload
+    ports:
+      - "8000:8000"                      # API → http://localhost:8000/docs
+    depends_on:
+      kafka1:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - retail_net
+
+  # ── Streamlit dashboard ───────────────────────────────────────────────────
+  dashboard:
+    build:
+      context: ../dashboard
+      dockerfile: Dockerfile
+    container_name: streamlit-dashboard
+    environment:
+      POSTGRES_DSN: postgresql://retail:retail@timescaledb:5432/retail
+      KAFKA_BROKERS: kafka1:19092
+      PRODUCER_API_URL: http://replay-producer:8000
+    ports:
+      - "8501:8501"
+    volumes:
+      - ../dashboard:/app         # hot-reload
+      - ../evaluation:/evaluation # batch baseline results readable by dashboard
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      kafka1:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - retail_net
+
+  # ── Batch baseline (one-shot; run with: docker compose run batch-baseline) ─
+  batch-baseline:
+    build:
+      context: ../pipeline/stream_processor
+      dockerfile: Dockerfile
+    container_name: batch-baseline
+    environment:
+      DB_HOST: timescaledb
+    volumes:
+      - ../pipeline/stream_processor:/app
+      - ../evaluation:/evaluation
+    command: [
+      "python3", "/app/run_batch_baseline.py",
+      "--db-host", "timescaledb",
+      "--out-dir", "/evaluation/experiments"
+    ]
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - retail_net
+
+  # ── Stream Consumer (Python — Kafka → sales_events + pipeline_metrics) ──────
+  stream-consumer:
+    build:
+      context: ../pipeline/stream_processor
+      dockerfile: Dockerfile
+    container_name: stream-consumer
+    environment:
+      KAFKA_BROKERS: kafka1:19092
+      DB_HOST: timescaledb
+      FROM_BEGINNING: "true"
+    volumes:
+      - ../pipeline/stream_processor:/app   # hot-reload
+    depends_on:
+      kafka1:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - retail_net
+
+  # ── Spark Structured Streaming (Kafka → sales_features) ───────────────────
+  spark-streaming:
+    build:
+      context: ./spark
+      dockerfile: Dockerfile
+    container_name: spark-streaming
+    mem_limit: 4g
+    environment:
+      KAFKA_PACKAGE: ""      # JARs pre-loaded via --jars below
+      PYSPARK_PYTHON: python3
+    volumes:
+      - ../pipeline:/opt/pipeline
+    command: [
+      "spark-submit",
+      "--jars", "/opt/spark-kafka-jars/spark-sql-kafka-0-10_2.12-3.5.1.jar,/opt/spark-kafka-jars/spark-token-provider-kafka-0-10_2.12-3.5.1.jar,/opt/spark-kafka-jars/kafka-clients-3.4.1.jar,/opt/spark-kafka-jars/commons-pool2-2.11.1.jar",
+      "--conf", "spark.driver.memory=2g",
+      "--conf", "spark.sql.shuffle.partitions=10",
+      "/opt/pipeline/stream_processor/feature_pipeline.py",
+      "--kafka-server", "kafka1:19092",
+      "--db-host", "timescaledb",
+      "--starting-offsets", "earliest"
+    ]
+    depends_on:
+      kafka1:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - retail_net
+
+  # ── Anomaly Detector (sales_features → anomaly_alerts) ────────────────────
+  anomaly-detector:
+    build:
+      context: ../pipeline/stream_processor
+      dockerfile: Dockerfile
+    container_name: anomaly-detector
+    volumes:
+      - ../pipeline/stream_processor:/app
+    command: [
+      "python3", "anomaly_detector.py",
+      "--db-host", "timescaledb",
+      "--kafka-server", "kafka1:19092"
+    ]
+    depends_on:
+      kafka1:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - retail_net
+
+  # ── Demand Forecaster (sales_features → forecast_results) ─────────────────
+  demand-forecaster:
+    build:
+      context: ../pipeline/stream_processor
+      dockerfile: Dockerfile
+    container_name: demand-forecaster
+    volumes:
+      - ../pipeline/stream_processor:/app
+    command: [
+      "python3", "demand_forecaster.py",
+      "--db-host", "timescaledb",
+      "--kafka-server", "kafka1:19092",
+      "--store", "ALL"
+    ]
+    depends_on:
+      kafka1:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - retail_net
+
 networks:
   retail_net:
     name: retail_net

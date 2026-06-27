@@ -43,10 +43,12 @@ POLL_INTERVAL = 60   # seconds between polls — forecasting is compute-heavy
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def connect_db(host: str) -> psycopg2.extensions.connection:
-    return psycopg2.connect(
+    conn = psycopg2.connect(
         host=host, port=5432, dbname="retail",
         user="retail", password="retail",
     )
+    conn.autocommit = True
+    return conn
 
 
 def make_producer(kafka_server: str) -> Producer:

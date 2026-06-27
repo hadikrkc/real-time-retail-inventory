@@ -23,7 +23,8 @@ from pathlib import Path
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-OUT_FILE = Path("evaluation/experiments/rq3_results.json")
+OUT_FILE      = Path("evaluation/experiments/rq3_results.json")
+BASELINE_DIR  = Path("evaluation/experiments")
 
 
 def connect(host: str):
@@ -193,6 +194,22 @@ def measure_data_volume(cur) -> dict:
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 
+def load_batch_baseline_ms() -> int | None:
+    """Read total_batch_latency_ms from the most recent batch_baseline_*.json file."""
+    candidates = sorted(BASELINE_DIR.glob("batch_baseline_*.json"), reverse=True)
+    for path in candidates:
+        try:
+            data = json.loads(path.read_text())
+            val  = data.get("total_batch_latency_ms")
+            if val is not None:
+                print(f"  Batch baseline loaded from {path.name}: {int(val):,} ms")
+                return int(val)
+        except Exception:
+            continue
+    print("  WARN: no batch_baseline_*.json found. Run: docker compose run batch-baseline")
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser(description="RQ3 architecture metrics evaluation")
     parser.add_argument("--db-host", default="localhost")
@@ -202,12 +219,15 @@ def main():
 
     conn = connect(args.db_host)
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        latency   = measure_latency(cur)
-        feat_tp   = measure_feature_throughput(cur)
-        event_tp  = measure_event_throughput(cur)
+        latency    = measure_latency(cur)
+        feat_tp    = measure_feature_throughput(cur)
+        event_tp   = measure_event_throughput(cur)
         alert_rate = measure_alert_rate(cur)
-        volume    = measure_data_volume(cur)
+        volume     = measure_data_volume(cur)
     conn.close()
+
+    print("[6] Loading batch baseline...")
+    batch_ms = load_batch_baseline_ms()
 
     results = {
         "latency_ms":           latency,
@@ -215,7 +235,7 @@ def main():
         "event_throughput":     event_tp,
         "alert_rate":           alert_rate,
         "data_volume":          volume,
-        "batch_baseline_ms":    87400,
+        "batch_baseline_ms":    batch_ms,
     }
 
     OUT_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -228,7 +248,10 @@ def main():
     # Human-readable summary
     if latency:
         print("── Latency ──────────────────────────────────────────")
-        print(f"  Batch baseline : 87,400 ms")
+        if batch_ms:
+            print(f"  Batch baseline : {batch_ms:,} ms")
+        else:
+            print(f"  Batch baseline : (not measured — run batch-baseline service)")
         print(f"  Streaming avg  : {latency.get('avg_ms', '?'):,} ms")
         print(f"  P50            : {latency.get('p50_ms', '?'):,} ms")
         print(f"  P95            : {latency.get('p95_ms', '?'):,} ms")

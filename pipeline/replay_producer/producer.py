@@ -12,6 +12,7 @@ Usage:
 
 import argparse
 import json
+import os
 import time
 import uuid
 from pathlib import Path
@@ -20,9 +21,13 @@ import pandas as pd
 from confluent_kafka import Producer
 from confluent_kafka.error import KafkaException
 
-DATA_DIR = Path(__file__).parents[2] / "data" / "m5"
+try:
+    _default_data = str(Path(__file__).parents[2] / "data" / "m5")
+except IndexError:
+    _default_data = "/data/m5"
+DATA_DIR = Path(os.environ.get("M5_DATA_DIR", _default_data))
 TOPIC = "retail.sales.events"
-BOOTSTRAP_SERVERS = "localhost:9092"
+BOOTSTRAP_SERVERS = os.environ.get("KAFKA_BROKERS", "localhost:9092")
 
 
 def load_data() -> tuple[pd.DataFrame, pd.DataFrame]:

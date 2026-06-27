@@ -14,9 +14,16 @@ Run inside Docker (recommended):
 """
 
 import argparse
+import os
 
 import psycopg2
 from psycopg2.extras import execute_values
+
+# Empty string → JARs already on classpath via spark-submit --jars (Docker mode)
+KAFKA_PACKAGE = os.environ.get(
+    "KAFKA_PACKAGE",
+    "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1",
+)
 
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import (
@@ -40,19 +47,20 @@ EVENT_SCHEMA = StructType([
 
 # ── Spark session ─────────────────────────────────────────────────────────────
 
-def make_spark(kafka_package: str) -> SparkSession:
-    return (
+def make_spark() -> SparkSession:
+    builder = (
         SparkSession.builder
         .appName("retail-feature-pipeline")
         .master("local[*]")
-        .config("spark.jars.packages", kafka_package)
         .config("spark.driver.memory", "2g")
         .config("spark.executor.memory", "2g")
         .config("spark.sql.shuffle.partitions", "10")
         .config("spark.sql.streaming.forceDeleteTempCheckpointLocation", "true")
         .config("spark.streaming.kafka.maxRatePerPartition", "1000")
-        .getOrCreate()
     )
+    if KAFKA_PACKAGE:
+        builder = builder.config("spark.jars.packages", KAFKA_PACKAGE)
+    return builder.getOrCreate()
 
 # ── Feature computation ───────────────────────────────────────────────────────
 
@@ -125,7 +133,8 @@ def make_write_batch(db_host: str):
                         rolling_sum_7d = EXCLUDED.rolling_sum_7d,
                         event_count_7d = EXCLUDED.event_count_7d,
                         max_qty_7d     = EXCLUDED.max_qty_7d,
-                        min_qty_7d     = EXCLUDED.min_qty_7d
+                        min_qty_7d     = EXCLUDED.min_qty_7d,
+                        inserted_at    = NOW()
                 """, [
                     (r.time, r.store_id, r.item_id,
                      r.rolling_avg_7d, r.rolling_sum_7d,
@@ -148,16 +157,16 @@ def main():
                         choices=["latest", "earliest"])
     args = parser.parse_args()
 
-    kafka_package = "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1"
     checkpoint_dir = "/tmp/spark-checkpoints/features"
 
-    spark = make_spark(kafka_package)
+    spark = make_spark()
     spark.sparkContext.setLogLevel("WARN")
 
     print(f"Spark version     : {spark.version}")
     print(f"Kafka server      : {args.kafka_server}")
     print(f"TimescaleDB       : {args.db_host}:5432/retail")
     print(f"Starting offsets  : {args.starting_offsets}")
+    print(f"Kafka package     : {KAFKA_PACKAGE or '(pre-loaded via --jars)'}")
     print("Feature pipeline running. Ctrl+C to stop.\n")
 
     features = build_features(spark, args.kafka_server, args.starting_offsets)

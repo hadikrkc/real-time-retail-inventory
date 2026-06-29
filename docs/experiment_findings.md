@@ -276,6 +276,22 @@ The test is confounded by bulk-replay inflation of `detection_latency_ms`.
 
 ---
 
+## Anomaly Injection Parameters (Reproducibility)
+
+| Parameter | Value | Notes |
+|---|---|---|
+| Train/test split | 80 / 20 | **Chronological** — rows ordered by `time ASC`; first 80% = train, last 20% = test |
+| Injection rate | 0.05 | 5% of test rows replaced with synthetic anomalies |
+| contamination | 0.05 | Set equal to injection rate by design (matching prior) |
+| Random seed | 42 | Used for both injection index sampling and `IsolationForest(random_state=42)` |
+| Stockout multiplier | all features → 0 | Simulates zero-sale period |
+| Spike multiplier | rolling\_avg/sum/max ×5 | Demand spike |
+| Drift multiplier | rolling\_avg/sum ×2.5 | Sustained demand shift |
+
+**Contamination sensitivity note:** The `contamination=0.05` value was chosen to match the injection rate. A sensitivity analysis across alternative values (e.g. 0.01, 0.1) is identified as future work — see paper §6 (Limitations).
+
+---
+
 ## Reproducibility Checklist
 
 To reproduce Experiment A results:

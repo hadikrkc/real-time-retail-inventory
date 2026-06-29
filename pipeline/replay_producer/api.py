@@ -37,9 +37,12 @@ app = FastAPI(title="Replay Producer API")
 _state: dict = {
     "running": False,
     "current_date": None,
+    "current_day": None,
     "total_events": 0,
     "events_per_sec": 0.0,
     "error": None,
+    "start_day": None,
+    "end_day": None,
 }
 _stop_event = threading.Event()
 
@@ -71,11 +74,13 @@ def _replay_worker(speed_sec: float, start_day: int, end_day: int) -> None:
         total = 0
         t0 = time.perf_counter()
 
+        current_day_counter = start_day - 1
         for event_date, events in iter_day_events(sales, calendar, start_day, end_day):
             if _stop_event.is_set():
                 print("[producer] stop requested")
                 break
 
+            current_day_counter += 1
             for event in events:
                 producer.produce(
                     topic=TOPIC,
@@ -88,6 +93,7 @@ def _replay_worker(speed_sec: float, start_day: int, end_day: int) -> None:
 
             elapsed = time.perf_counter() - t0
             _state["current_date"] = str(event_date.date())
+            _state["current_day"] = current_day_counter
             _state["total_events"] = total
             _state["events_per_sec"] = round(total / elapsed, 1) if elapsed > 0 else 0.0
 
@@ -113,7 +119,9 @@ def start(speed_days_per_min: float = 10.0, start_day: int = 1, end_day: int = 1
 
     _stop_event.clear()
     _state.update({"running": True, "total_events": 0,
-                   "events_per_sec": 0.0, "error": None, "current_date": None})
+                   "events_per_sec": 0.0, "error": None,
+                   "current_date": None, "current_day": None,
+                   "start_day": start_day, "end_day": end_day})
 
     threading.Thread(
         target=_replay_worker,

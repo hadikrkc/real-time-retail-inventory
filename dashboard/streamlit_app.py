@@ -266,45 +266,117 @@ with _sidebar_placeholder.container():
 
     # Fetch producer status first — drives button appearance
     try:
-        ps       = requests.get(f"{PRODUCER_API}/status", timeout=2).json()
-        running  = ps.get("running", False)
-        total_ev = ps.get("total_events", 0)
-        ev_sec   = ps.get("events_per_sec", 0.0)
-        cur_date = ps.get("current_date", "—")
-        api_ok   = True
+        ps            = requests.get(f"{PRODUCER_API}/status", timeout=2).json()
+        running       = ps.get("running", False)
+        total_ev      = ps.get("total_events", 0)
+        ev_sec        = ps.get("events_per_sec", 0.0)
+        cur_date      = ps.get("current_date", "—")
+        api_start_day = ps.get("start_day")
+        api_end_day   = ps.get("end_day")
+        api_cur_day   = ps.get("current_day")
+        api_ok        = True
     except Exception:
         running = False; api_ok = False
         total_ev = ev_sec = 0; cur_date = "—"
+        api_start_day = api_end_day = api_cur_day = None
 
-    st.subheader("Pipeline Control")
-    speed = st.slider("Replay speed (days/min)", 1, 60, 10, key="speed")
+    st.subheader("🔬 Run Experiment")
+    st.caption("Each preset: **hard reset** → clean DB → replay selected days.")
+    speed = st.slider("Replay speed (days/min)", 1, 60, 20, key="speed")
+
+    def _trigger_experiment(n_days: int):
+        try:
+            requests.post(f"{PRODUCER_API}/stop", timeout=3)
+        except Exception:
+            pass
+        try:
+            requests.post(f"{PRODUCER_API}/reset", params={"level": "hard"}, timeout=5)
+            st.session_state["_pending_start"] = n_days
+            st.toast(f"Reset started — preparing {n_days}-day experiment…", icon="🔄")
+        except Exception as exc:
+            st.toast(f"Connection error: {exc}", icon="🔴")
+
+    def _start_range(start_d: int, end_d: int):
+        try:
+            requests.post(
+                f"{PRODUCER_API}/start",
+                params={"speed_days_per_min": st.session_state.get("speed", 10),
+                        "start_day": start_d, "end_day": end_d},
+                timeout=5,
+            )
+            st.toast(f"Replay: days {start_d}–{end_d}", icon="▶")
+        except Exception as exc:
+            st.toast(f"Start error: {exc}", icon="🔴")
 
     if running:
         st.markdown(_GREEN_BTN_CSS, unsafe_allow_html=True)
-        if st.button("⏸ Pause", type="primary", use_container_width=True):
+        # Label shows exactly what experiment is running
+        exp_label = ""
+        if api_start_day is not None and api_end_day is not None:
+            n_days = api_end_day - api_start_day + 1
+            exp_label = f" · {n_days}-day experiment"
+        if st.button(f"⏸ Stop{exp_label}", type="primary", use_container_width=True):
             try:
                 requests.post(f"{PRODUCER_API}/stop", timeout=5)
                 st.toast("Pipeline stopped.", icon="⏹")
                 st.rerun()
             except Exception as e:
-                st.toast(f"Connection failed: {e}", icon="🔴")
-    else:
-        if st.button("▶ Start", type="primary", use_container_width=True):
-            try:
-                requests.post(
-                    f"{PRODUCER_API}/start",
-                    params={"speed_days_per_min": speed},
-                    timeout=5,
-                )
-                st.toast(f"Started — {speed} days/min", icon="▶")
-                st.rerun()
-            except Exception as e:
-                st.toast(f"Connection failed: {e}", icon="🔴")
+                st.toast(f"Connection error: {e}", icon="🔴")
 
+        # Progress display while running
+        if api_cur_day is not None and api_end_day is not None and api_start_day is not None:
+            elapsed_days = api_cur_day - api_start_day + 1
+            total_days   = api_end_day - api_start_day + 1
+            pct = elapsed_days / total_days if total_days > 0 else 0
+            st.progress(pct, text=f"Day {elapsed_days} / {total_days}  ·  {cur_date}")
+        elif cur_date and cur_date != "—":
+            st.caption(f"📅 {cur_date}")
+
+    else:
+        # Row 1: short experiments
+        col30, col60, col90 = st.columns(3)
+        if col30.button("30 Days", use_container_width=True):
+            _trigger_experiment(30)
+            st.rerun()
+        if col60.button("60 Days", use_container_width=True, type="primary"):
+            _trigger_experiment(60)
+            st.rerun()
+        if col90.button("90 Days", use_container_width=True):
+            _trigger_experiment(90)
+            st.rerun()
+
+        # Row 2: full-year experiment (Experiment B)
+        if st.button(
+            "📅 1 Year  (365 days · Experiment B)",
+            use_container_width=True,
+            help="Pre-trains on full 2011 data → captures annual seasonality. ~18 min replay + ~20 min Spark.",
+        ):
+            _trigger_experiment(365)
+            st.rerun()
+
+        # Incremental extension — only show if a previous experiment ran
+        last_end = api_end_day or st.session_state.get("_experiment_days", 0)
+        if last_end and last_end > 0:
+            next_end = last_end + 30
+            if st.button(
+                f"➕ +30 Days  (days {last_end+1}–{next_end})",
+                use_container_width=True,
+                help="No reset — pipeline continues from where it left off",
+            ):
+                _start_range(last_end + 1, next_end)
+                st.rerun()
+
+    # Status caption — use API-reported start/end days (survives page reloads)
     if api_ok:
-        st.caption(f"Pipeline: {'🟢 Running' if running else '⚪ Idle'}")
+        pending_n = st.session_state.get("_pending_start")
         if running:
-            st.caption(f"{cur_date} · {total_ev:,} events · {ev_sec:,.0f} ev/s")
+            st.caption(f"🟢 {total_ev:,} events · {ev_sec:,.0f} ev/s")
+        elif pending_n:
+            st.caption(f"⏳ Reset in progress — {pending_n}-day experiment will start automatically…")
+        else:
+            last_end = api_end_day or st.session_state.get("_experiment_days", 0)
+            suffix = f" · Last: {last_end} days ({api_start_day}–{api_end_day})" if last_end and api_start_day else (f" · Last: {last_end} days" if last_end else "")
+            st.caption(f"⚪ Idle{suffix}")
     else:
         st.caption("Pipeline: 🔴 API unreachable")
 
@@ -358,6 +430,8 @@ with _sidebar_placeholder.container():
         col_y, col_n = st.columns(2)
         if col_y.button("✅ Yes", use_container_width=True):
             st.session_state["reset_confirm"] = False
+            st.session_state.pop("_pending_start", None)
+            st.session_state.pop("_experiment_days", None)
             try:
                 requests.post(
                     f"{PRODUCER_API}/reset",
@@ -376,6 +450,30 @@ with _sidebar_placeholder.container():
         if col_n.button("❌ Cancel", use_container_width=True):
             st.session_state["reset_confirm"] = False
             st.rerun()
+
+    # ── Auto-start pending experiment after reset completes ───────────────────
+    pending_n = st.session_state.get("_pending_start")
+    if pending_n and _reset_status:
+        _rs_done2    = _reset_status.get("done",    False)
+        _rs_running2 = _reset_status.get("running", False)
+        _rs_error2   = _reset_status.get("error")
+        if _rs_done2 and not _rs_running2 and not _rs_error2:
+            try:
+                requests.post(
+                    f"{PRODUCER_API}/start",
+                    params={
+                        "speed_days_per_min": st.session_state.get("speed", 10),
+                        "start_day": 1,
+                        "end_day": pending_n,
+                    },
+                    timeout=5,
+                )
+                st.session_state["_experiment_days"] = pending_n
+                st.session_state.pop("_pending_start", None)
+                st.toast(f"{pending_n}-day experiment started!", icon="🔬")
+                st.rerun()
+            except Exception as exc:
+                st.toast(f"Auto-start error: {exc}", icon="🔴")
 
     st.divider()
     auto_refresh = st.toggle("Auto-refresh (5 s)", value=True, key="auto_refresh")

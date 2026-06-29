@@ -84,7 +84,7 @@ services:
   timescaledb:
     image: timescale/timescaledb:latest-pg16
     container_name: timescaledb
-    mem_limit: 512m
+    mem_limit: 3g
     ports:
       - "5432:5432"
     environment:
@@ -235,7 +235,7 @@ services:
     command: [
       "spark-submit",
       "--jars", "/opt/spark-kafka-jars/spark-sql-kafka-0-10_2.12-3.5.1.jar,/opt/spark-kafka-jars/spark-token-provider-kafka-0-10_2.12-3.5.1.jar,/opt/spark-kafka-jars/kafka-clients-3.4.1.jar,/opt/spark-kafka-jars/commons-pool2-2.11.1.jar",
-      "--conf", "spark.driver.memory=2g",
+      "--conf", "spark.driver.memory=3g",
       "--conf", "spark.sql.shuffle.partitions=10",
       "/opt/pipeline/stream_processor/feature_pipeline.py",
       "--kafka-server", "kafka1:19092",
@@ -293,6 +293,28 @@ services:
       timescaledb:
         condition: service_healthy
     restart: unless-stopped
+    networks:
+      - retail_net
+
+  # ── Evaluation runner (one-shot; docker compose run eval <script>) ────────────
+  eval:
+    build:
+      context: ../pipeline/stream_processor
+      dockerfile: Dockerfile
+    container_name: eval-runner
+    environment:
+      DB_HOST: timescaledb
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ../evaluation:/evaluation      # scripts + experiments output
+      - ../data/m5:/data/m5:ro         # M5 CSV (statistical_tests.py)
+    working_dir: /evaluation
+    entrypoint: ["python3"]
+    command: ["--help"]
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    restart: "no"
     networks:
       - retail_net
 

@@ -72,6 +72,7 @@ def build_features(spark: SparkSession, kafka_server: str, starting_offsets: str
         .option("subscribe", "retail.sales.events")
         .option("startingOffsets", starting_offsets)
         .option("failOnDataLoss", "false")
+        .option("maxOffsetsPerTrigger", "200000")
         .load()
     )
 
